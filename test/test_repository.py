@@ -235,12 +235,12 @@ class TestJsonGitRepository(helpers.RepoTestCase):
 
         pygit2_repo = self.repo._repo
         head_ref = pygit2_repo.lookup_reference('HEAD').resolve()
-        head_commit = pygit2_repo[head_ref.oid]
+        head_commit = pygit2_repo[head_ref.get_object().oid]
         tree = head_commit.tree
         self.assertIn('roses', tree)
         self.assertIn('violets', tree)
-        self.assertEquals(json.dumps('red'), tree['roses'].to_object().data)
-        self.assertEquals(json.dumps('blue'), tree['violets'].to_object().data)
+        self.assertEquals(json.dumps('red'), pygit2_repo[tree['roses'].oid].data)
+        self.assertEquals(json.dumps('blue'), pygit2_repo[tree['violets'].oid].data)
 
     def test_overlapping_paths(self):
         """Should throw error if key overlaps with directory.

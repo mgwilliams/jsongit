@@ -18,6 +18,7 @@ from .wrappers import Commit, Diff, Conflict, Merge
 import constants
 import utils
 
+
 class Repository(object):
     def __init__(self, repo, dumps, loads):
         self._repo = repo
@@ -48,7 +49,7 @@ class Repository(object):
         """
         steps = path.split('/')
         for step in steps:
-            oid = self._repo[oid][step].oid
+            oid = self._repo.get(oid)[step].oid
         return oid
 
     def _build_commit(self, pygit2_commit):
@@ -63,7 +64,7 @@ class Repository(object):
 
     def _repo_head(self):
         try:
-            return self._repo[self._repo.lookup_reference(self._head_target()).oid]
+            return self._repo.lookup_reference(self._head_target()).get_object()
         except KeyError:
             return None
 
@@ -94,13 +95,8 @@ class Repository(object):
             raise NotJsonError(e)
 
         if key in self._repo.index:
-            del self._repo.index[key]
-        working_tree_id = self._repo.index.write_tree()
-        working_tree = self._repo[working_tree_id]
-        new_entry = b"100644 %s\x00%s" % (key, blob_id)
-        tree_data = working_tree.read_raw() + new_entry
-        working_tree_id = self._repo.write(pygit2.GIT_OBJ_TREE, tree_data)
-        self._repo.index.read_tree(working_tree_id)
+            self._repo.index.remove(key)
+        self._repo.index.add(pygit2.IndexEntry(key, blob_id, pygit2.GIT_FILEMODE_BLOB))
         self._repo.index.write()
 
     def checkout(self, source, dest, **kwargs):
@@ -204,13 +200,15 @@ class Repository(object):
             try:
                 # create a single-entry tree for the commit.
                 blob_id = self._navigate_tree(tree_id, key)
-                key_tree_data = b"100644 %s\x00%s" % (key, blob_id)
-                key_tree_id = self._repo.write(pygit2.GIT_OBJ_TREE, key_tree_data)
+                idx = pygit2.Index('')
+                idx.add(pygit2.IndexEntry(key, blob_id, pygit2.GIT_FILEMODE_BLOB))
+                key_tree_id = idx.write_tree(self._repo)
                 self._repo.create_commit(self._key2ref(key), author,
                                          committer, message, key_tree_id,
                                          [parent.oid for parent in parents])
-            except pygit2.GitError as e:
-                if str(e).startswith('Failed to create reference'):
+            except (pygit2.GitError, OSError) as e:
+                if (str(e).startswith('Failed to create reference') or
+                        'directory' in str(e)):
                     raise InvalidKeyError(e)
                 else:
                     raise e
@@ -404,7 +402,7 @@ class Repository(object):
         if key is None and commit is None:
             raise TypeError()
         elif commit is None:
-            c = self._repo[self._repo.lookup_reference(self._key2ref(key)).oid]
+            c = self._repo.lookup_reference(self._key2ref(key)).get_object()
             commit = self._build_commit(c)
         return (self._build_commit(c) for c in self._repo.walk(commit.oid, order))
 
@@ -431,7 +429,7 @@ class Repository(object):
         :raises: :class:`StagedDataError jsongit.StagedDataError`
         """
         if force is True or self.staged(key) is False:
-            del self._repo.index[key]
+            self._repo.index.remove(key)
         elif force is False and self.staged(key):
             raise StagedDataError("There is data staged for %s" % key)
         self._repo.lookup_reference(self._key2ref(key)).delete()

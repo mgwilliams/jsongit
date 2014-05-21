@@ -6,7 +6,7 @@ try:
     # Install prereqs here and now if we can.
     from setuptools import setup
     kw = { 'install_requires': [
-        'pygit2>=0.16.1',
+        'pygit2>=0.20.3',
         'json_diff>=1.2.9'
     ] }
 except ImportError:
